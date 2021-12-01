@@ -26,16 +26,25 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <stdlib.h>
 #include "printf.h"
+#include "pid.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+typedef enum
+{
+	ENCODER_MODE_X1 = 1,
+	ENCODER_MODE_X4 = 4
+}
+encoderMode;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define SAMPLE_TIME 10.0 // PID sample time in ms
+#define PWM_PERIOD	1000
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -46,13 +55,20 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+volatile uint8_t rx_buf[64];
 volatile uint8_t tx_buf[16];
+
+PidType pid;
+volatile encoderMode enc_mode = ENCODER_MODE_X4;
+volatile int32_t enc_pulse = 0;
+volatile float Kp = 60, Ki = 10, Kd = 0.7;
+volatile float setpoint = 0, input = 0, output = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-
+void set_duty_cycle(int dutyCycle);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -91,17 +107,33 @@ int main(void)
   MX_DMA_Init();
   MX_USART2_UART_Init();
   MX_TIM3_Init();
+  MX_TIM6_Init();
+  MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
+  __HAL_DMA_DISABLE_IT(&hdma_usart2_rx, DMA_IT_HT);
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t *)rx_buf, sizeof(rx_buf));
+
+  PID_Init(&pid, (float *)&input, (float *)&output, (float *)&setpoint,
+		  (float)Kp, (float)Ki, (float)Kd,
+		  PID_Direction_Direct);
+  PID_SetSampleTime(&pid, SAMPLE_TIME);
+  PID_SetOutputLimits(&pid, -PWM_PERIOD, PWM_PERIOD);
+
+  TIM3->CNT = 32768;
   HAL_TIM_Encoder_Start(&htim3, TIM_CHANNEL_ALL);
+
+  HAL_TIM_Base_Start_IT(&htim6);
+
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	uint16_t len = snprintf((char *)tx_buf, sizeof(tx_buf), "%d\r\n", (int)TIM3->CNT);
-	HAL_UART_Transmit_DMA(&huart2, (uint8_t *)tx_buf, len);
-	HAL_Delay(200);
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -153,7 +185,133 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
+{
+	if(huart->Instance == USART2)
+	{
+		uint32_t i = 0;
+		while(i < Size)
+		{
+			uint8_t cmdByte = rx_buf[i];
+			i += 2;
 
+			//uint8_t paramBytes[4];
+			//uint32_t asInt;
+			float param = 0;
+			float sign = 1;
+			float factor = 1;
+			bool point_found = false;
+
+			if(rx_buf[i] == '-')
+			{
+				sign = -1;
+				i++;
+			}
+			while(i < Size)
+			{
+				if(rx_buf[i] == '.')
+				{
+					point_found = true;
+					i++;
+				}
+				if(rx_buf[i] >= '0' && rx_buf[i] <= '9')
+					param = param * 10 + (float)(rx_buf[i] - '0');
+				else
+					break;
+				if(point_found)
+					factor *= 10;
+				i++;
+			}
+			param = sign * param / factor;
+
+/*			switch(cmdByte)
+			{
+				case 'P':
+				case 'I':
+				case 'D':
+				case 'S':
+//					paramBytes[0] = rx_buf[i];
+//					paramBytes[1] = rx_buf[i+1];
+//					paramBytes[2] = rx_buf[i+2];
+//					paramBytes[3] = rx_buf[i+3];
+//					i += 4;
+//					asInt = paramBytes[0] << 24 | paramBytes[1] << 16 | paramBytes[2] << 8 | paramBytes[3];
+//				    param = *(float *)&asInt;
+
+
+				case 'M':
+
+					i++;
+					break;
+				default:
+					break;
+			}*/
+
+			encoderMode mode = (encoderMode)param;
+			switch(cmdByte)
+			{
+				case 'P':
+					Kp = param;
+					break;
+				case 'I':
+					Ki = param;
+					break;
+				case 'D':
+					Kd = param;
+					break;
+				case 'S':
+					setpoint = param;
+					break;
+				case 'M':
+					if(mode == 1)
+						enc_mode = ENCODER_MODE_X1;
+					else if(mode == 4)
+						enc_mode = ENCODER_MODE_X4;
+				default:
+					break;
+			}
+			while(rx_buf[i] == '\r' || rx_buf[i] == '\n')
+				i++;
+		}
+
+		PID_SetTunings(&pid, Kp, Ki, Kd);
+
+		HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t *)rx_buf, sizeof(rx_buf));
+	}
+}
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+	if(htim->Instance == TIM6)
+	{
+		enc_pulse += ((int32_t)TIM3->CNT - 32768);
+		TIM3->CNT = 32768;
+
+		input = (float)enc_pulse;
+		PID_Compute(&pid);
+		set_duty_cycle((int)output);
+
+		uint16_t len = snprintf((char *)tx_buf, sizeof(tx_buf), "%d\r\n", (int)enc_pulse);
+		HAL_UART_Transmit_DMA(&huart2, (uint8_t *)tx_buf, len);
+	}
+}
+
+void set_duty_cycle(int dutyCycle)
+{
+	bool dir = dutyCycle > 0 ? 1 : 0;
+	dutyCycle = abs(dutyCycle);
+
+	if(dir == 1)
+	{
+		__HAL_TIM_SetCompare(&htim1, TIM_CHANNEL_1, PWM_PERIOD - dutyCycle);
+		__HAL_TIM_SetCompare(&htim1, TIM_CHANNEL_2, PWM_PERIOD);
+	}
+	else
+	{
+		__HAL_TIM_SetCompare(&htim1, TIM_CHANNEL_1, PWM_PERIOD);
+		__HAL_TIM_SetCompare(&htim1, TIM_CHANNEL_2, PWM_PERIOD - dutyCycle);
+	}
+}
 /* USER CODE END 4 */
 
 /**
