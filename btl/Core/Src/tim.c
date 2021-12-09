@@ -120,7 +120,7 @@ void MX_TIM3_Init(void)
   htim3.Init.Prescaler = 0;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim3.Init.Period = 65535;
-  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV2;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   sConfig.EncoderMode = TIM_ENCODERMODE_TI12;
   sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
@@ -142,7 +142,32 @@ void MX_TIM3_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN TIM3_Init 2 */
-
+  //encoder x4
+//  htim3.Instance = TIM3;
+//  htim3.Init.Prescaler = 0;
+//  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+//  htim3.Init.Period = 65535;
+//  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+//  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+//  sConfig.EncoderMode = TIM_ENCODERMODE_TI12;
+//  sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
+//  sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
+//  sConfig.IC1Prescaler = TIM_ICPSC_DIV1;
+//  sConfig.IC1Filter = 15;
+//  sConfig.IC2Polarity = TIM_ICPOLARITY_RISING;
+//  sConfig.IC2Selection = TIM_ICSELECTION_DIRECTTI;
+//  sConfig.IC2Prescaler = TIM_ICPSC_DIV1;
+//  sConfig.IC2Filter = 15;
+//  if (HAL_TIM_Encoder_Init(&htim3, &sConfig) != HAL_OK)
+//  {
+//    Error_Handler();
+//  }
+//  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+//  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+//  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+//  {
+//    Error_Handler();
+//  }
   /* USER CODE END TIM3_Init 2 */
 
 }
@@ -160,7 +185,7 @@ void MX_TIM6_Init(void)
 
   /* USER CODE END TIM6_Init 1 */
   htim6.Instance = TIM6;
-  htim6.Init.Prescaler = 840 - 1;
+  htim6.Init.Prescaler = 84 - 1;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim6.Init.Period = 1000 - 1;
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -236,7 +261,12 @@ void HAL_TIM_Encoder_MspInit(TIM_HandleTypeDef* tim_encoderHandle)
     HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /* USER CODE BEGIN TIM3_MspInit 1 */
-
+//    GPIO_InitStruct.Pin = GPIO_PIN_4|GPIO_PIN_5;
+//    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+//    GPIO_InitStruct.Pull = GPIO_NOPULL;
+//    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+//    GPIO_InitStruct.Alternate = GPIO_AF2_TIM3;
+//    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
   /* USER CODE END TIM3_MspInit 1 */
   }
 }
